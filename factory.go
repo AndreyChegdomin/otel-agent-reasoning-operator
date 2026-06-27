@@ -46,6 +46,9 @@ func createDefaultConfig() component.Config {
 			"send_email", "http_post", "http_request", "upload_file",
 			"send_message", "publish", "put_object", "webhook",
 		},
+		// Capacity caps (anti-DoS). Taint role keys use baked-in defaults.
+		MaxStepsPerTrajectory: 10000,
+		MaxTaintEntries:       50000,
 	}
 }
 

@@ -38,7 +38,7 @@ OTel-emitting framework and any OTLP backend.
 | Level | File | What it catches |
 |-------|------|-----------------|
 | **0 — per-step** (stateless) | `perstep.go` | A single destructive tool call against a protected resource → `protected_resource_destruction`. |
-| **1a — taint tracking** (the heart) | `taint.go` | A value derived from a protected resource reaching an egress action through a benign-looking chain → `taint_exfiltration`. |
+| **1a — taint tracking** (the heart) | `taint.go` | A value derived from a protected resource reaching an egress action through a benign-looking chain → `taint_exfiltration`. **Directed data-flow by argument role** (tainted source → sink), not co-occurrence. |
 | **1b — state-machine invariants** | `invariants.go` | `excessive_deletion`, `forbidden_ordering`, `action_rate_anomaly` (all opt-in). |
 | **2 — reasoning↔action consistency** | `consistency.go` | Declared intent ≠ actual action → `reasoning_action_mismatch` (opt-in, weakest layer). |
 
@@ -112,9 +112,16 @@ processors:
 - Not an execution blocker; telemetry-path detector only (eye, not hand).
 - Not a neuro-judge; deterministic by design — transparent + reproducible over
   smart-but-opaque.
-- Level 1a taint propagation is a **conservative over-approximation** (a step
-  touching tainted data taints all its identifiers). This is intentional and
-  may over-flag; it is tunable.
+- Level 1a taint is **directed data-flow by argument role**: a tainted *source*
+  argument (classified by JSON key) propagates only to that step's *sink*
+  arguments, and an egress violation requires a tainted source actually feeding
+  an egress tool — not mere co-occurrence in the args blob. Role inference is a
+  heuristic, tunable via `taint_source_keys` / `taint_sink_keys`; unkeyed
+  (non-JSON) args fall back to a conservative source∪sink treatment unless
+  `taint_strict_roles` is set.
+- Per-trajectory caps (`max_steps_per_trajectory`, `max_taint_entries`) and a
+  JSON-depth limit bound memory/stack against adversarial floods; tripping a cap
+  emits `trajectory_capacity_exceeded` (deep args emit `args_too_deep`).
 - No claim of completeness — by Rice's theorem no verifier catches all. The
   goal is to raise the cost of, and narrow the space of, undetected multi-step
   attacks.

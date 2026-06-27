@@ -87,6 +87,59 @@ func TestReapEvictsClosedRoot(t *testing.T) {
 	}
 }
 
+func TestStepCapTripsSignalAndBoundsMemory(t *testing.T) {
+	tr, _ := testTracker(time.Hour)
+	tr.cfg.MaxStepsPerTrajectory = 5
+
+	signals := 0
+	for i := 0; i < 50; i++ {
+		for _, v := range tr.observe(spanIn(traceA, "execute_tool", "read_file", "/data/a")) {
+			if v == violationCapacityExceeded {
+				signals++
+			}
+		}
+	}
+	tr.mu.Lock()
+	steps := len(tr.active[traceA].steps)
+	truncated := tr.active[traceA].truncated
+	tr.mu.Unlock()
+
+	if steps > 5 {
+		t.Errorf("steps = %d, want capped at 5", steps)
+	}
+	if !truncated {
+		t.Error("trajectory should be marked truncated")
+	}
+	if signals != 1 {
+		t.Errorf("capacity signal emitted %d times, want exactly 1", signals)
+	}
+}
+
+func TestTaintCapBoundsTaintSet(t *testing.T) {
+	tr, _ := testTracker(time.Hour)
+	tr.cfg.MaxTaintEntries = 2
+	tr.cfg.ProtectedResources = []string{"/etc/secrets"}
+
+	// Each copy adds one new sink to the taint set; the 3rd is blocked.
+	tr.observe(spanIn(traceA, "execute_tool", "copy_file", `{"src":"/etc/secrets/x","dst":"/tmp/1"}`))
+	tr.observe(spanIn(traceA, "execute_tool", "copy_file", `{"src":"/tmp/1","dst":"/tmp/2"}`))
+	var sawSignal bool
+	for _, v := range tr.observe(spanIn(traceA, "execute_tool", "copy_file", `{"src":"/tmp/2","dst":"/tmp/3"}`)) {
+		if v == violationCapacityExceeded {
+			sawSignal = true
+		}
+	}
+
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if got := len(tr.active[traceA].taintSet); got > 2 {
+		t.Errorf("taintSet = %d, want capped at 2", got)
+	}
+	if !sawSignal {
+		t.Error("expected trajectory_capacity_exceeded once taint cap is hit")
+	}
+}
+
 func TestStartStopFlushes(t *testing.T) {
 	tr, _ := testTracker(time.Hour)
 	tr.start()

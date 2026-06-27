@@ -16,6 +16,10 @@ const reapInterval = 30 * time.Second
 // GenAI operation names used for trajectory bookkeeping.
 const opInvokeAgent = "invoke_agent"
 
+// violationCapacityExceeded signals a trajectory that hit a capacity cap — an
+// adversarial DoS signal in its own right, since normal agents do not.
+const violationCapacityExceeded = "trajectory_capacity_exceeded"
+
 // Step is a single observed action in a trajectory, normalized across
 // instrumentation conventions.
 type Step struct {
@@ -41,6 +45,12 @@ type TrajectoryState struct {
 	// pendingIntent is the most recent declared intent (Level 2): tools the
 	// reasoning said it would use, awaiting comparison to actual actions.
 	pendingIntent []string
+
+	// truncated is set when a capacity cap (steps or taint entries) is hit;
+	// the trajectory stops growing. capacityEmitted ensures the
+	// trajectory_capacity_exceeded signal is emitted only once.
+	truncated       bool
+	capacityEmitted bool
 }
 
 // tracker holds live trajectories keyed by trace_id. The mutex guards both the
@@ -104,6 +114,11 @@ func (t *tracker) observe(span ptrace.Span) []string {
 
 	var violations []string
 	for _, tc := range extractToolCalls(span) {
+		// Capacity cap: stop growing this trajectory once over the step limit.
+		if t.cfg.MaxStepsPerTrajectory > 0 && len(st.steps) >= t.cfg.MaxStepsPerTrajectory {
+			st.truncated = true
+			break
+		}
 		step := Step{
 			spanID:   span.SpanID(),
 			opName:   opName,
@@ -112,15 +127,19 @@ func (t *tracker) observe(span ptrace.Span) []string {
 			ts:       now,
 		}
 		st.steps = append(st.steps, step)
-		// Level 1a taint first (so it outranks Level 1b in the verdict),
-		// then Level 1b state-machine invariants.
-		if v, ok := applyTaint(st, step, t.cfg); ok {
-			violations = append(violations, v)
-		}
+		// Level 1a taint (outranks later levels), then Level 1b invariants,
+		// then Level 2 consistency. applyTaint may also enforce the taint cap.
+		violations = append(violations, applyTaint(st, step, t.cfg)...)
 		violations = append(violations, runInvariants(st, step, t.cfg)...)
 		if v, ok := checkConsistency(st, step, t.cfg); ok {
 			violations = append(violations, v)
 		}
+	}
+
+	// Emit the capacity signal once, after any cap (steps or taint) tripped.
+	if st.truncated && !st.capacityEmitted {
+		st.capacityEmitted = true
+		violations = append(violations, violationCapacityExceeded)
 	}
 	return violations
 }

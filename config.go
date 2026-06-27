@@ -46,6 +46,31 @@ type Config struct {
 	// reaching one of these is the Level 1a exfiltration violation.
 	EgressTools []string `mapstructure:"egress_tools"`
 
+	// TaintSourceKeys / TaintSinkKeys extend the baked-in defaults used to
+	// classify a tool argument's role from its JSON key. Source keys mark data
+	// being read/sent; sink keys mark write destinations. Taint flows from
+	// tainted sources to sinks only; neutral keys (logs, context, metadata) are
+	// ignored. Provided values are added to the defaults (see defaultTaint*Keys).
+	TaintSourceKeys []string `mapstructure:"taint_source_keys"`
+	TaintSinkKeys   []string `mapstructure:"taint_sink_keys"`
+
+	// TaintStrictRoles, when true, makes steps with unkeyed args (role_unknown,
+	// e.g. non-JSON args) NOT propagate taint — fewer false positives at the
+	// cost of false negatives. Default false: such steps fall back to treating
+	// every token as both source and sink.
+	TaintStrictRoles bool `mapstructure:"taint_strict_roles"`
+
+	// --- Capacity caps (anti-DoS; 0 = unlimited) ---
+
+	// MaxStepsPerTrajectory caps the steps retained for one trajectory. Beyond
+	// it the trajectory is marked truncated, emits trajectory_capacity_exceeded
+	// once, and stops growing (still tracked for eviction).
+	MaxStepsPerTrajectory int `mapstructure:"max_steps_per_trajectory"`
+
+	// MaxTaintEntries caps the taint set size for one trajectory, with the same
+	// truncation behavior as MaxStepsPerTrajectory.
+	MaxTaintEntries int `mapstructure:"max_taint_entries"`
+
 	// --- Level 1b state-machine invariants (all opt-in; zero/empty disables) ---
 
 	// MaxDeletes flags a trajectory whose cumulative count of destructive-tool
