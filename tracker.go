@@ -98,9 +98,12 @@ func (t *tracker) observe(span ptrace.Span) []string {
 			ts:       now,
 		}
 		st.steps = append(st.steps, step)
+		// Level 1a taint first (so it outranks Level 1b in the verdict),
+		// then Level 1b state-machine invariants.
 		if v, ok := applyTaint(st, step, t.cfg); ok {
 			violations = append(violations, v)
 		}
+		violations = append(violations, runInvariants(st, step, t.cfg)...)
 	}
 	return violations
 }

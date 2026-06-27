@@ -45,6 +45,28 @@ type Config struct {
 	// the trust boundary (send_email, http_post, upload, ...). A tainted value
 	// reaching one of these is the Level 1a exfiltration violation.
 	EgressTools []string `mapstructure:"egress_tools"`
+
+	// --- Level 1b state-machine invariants (all opt-in; zero/empty disables) ---
+
+	// MaxDeletes flags a trajectory whose cumulative count of destructive-tool
+	// calls exceeds this threshold. 0 disables.
+	MaxDeletes int `mapstructure:"max_deletes"`
+
+	// ForbiddenOrderings flags a trajectory where a "then" action occurs after
+	// a "first" action has already happened in the same trajectory.
+	ForbiddenOrderings []OrderingRule `mapstructure:"forbidden_orderings"`
+
+	// MaxActionsPerWindow / RateWindow flag bursty action frequency: more than
+	// MaxActionsPerWindow steps within a trailing RateWindow. Both must be set.
+	MaxActionsPerWindow int           `mapstructure:"max_actions_per_window"`
+	RateWindow          time.Duration `mapstructure:"rate_window"`
+}
+
+// OrderingRule is a forbidden temporal ordering of two tools within one
+// trajectory: Then must not occur after First has occurred.
+type OrderingRule struct {
+	First string `mapstructure:"first"`
+	Then  string `mapstructure:"then"`
 }
 
 // Validate implements component.ConfigValidator.
