@@ -21,16 +21,18 @@ const (
 // a pass-through that proves spans flow and gen_ai.* attributes are readable;
 // state/taint/invariants layer on in later build-order steps.
 type guardProcessor struct {
-	cfg    *Config
-	logger *zap.Logger
-	next   consumer.Traces
+	cfg     *Config
+	logger  *zap.Logger
+	next    consumer.Traces
+	tracker *tracker
 }
 
 func newGuardProcessor(set processor.Settings, cfg *Config, next consumer.Traces) *guardProcessor {
 	return &guardProcessor{
-		cfg:    cfg,
-		logger: set.Logger,
-		next:   next,
+		cfg:     cfg,
+		logger:  set.Logger,
+		next:    next,
+		tracker: newTracker(cfg, set.Logger),
 	}
 }
 
@@ -40,8 +42,15 @@ func (p *guardProcessor) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: true}
 }
 
-func (p *guardProcessor) Start(context.Context, component.Host) error { return nil }
-func (p *guardProcessor) Shutdown(context.Context) error              { return nil }
+func (p *guardProcessor) Start(context.Context, component.Host) error {
+	p.tracker.start()
+	return nil
+}
+
+func (p *guardProcessor) Shutdown(context.Context) error {
+	p.tracker.stop()
+	return nil
+}
 
 // ConsumeTraces iterates the span tree, runs the Level 0 per-step verifier on
 // each span, applies the configured verdict (annotate or drop), then forwards.
@@ -62,6 +71,10 @@ func (p *guardProcessor) ConsumeTraces(ctx context.Context, td ptrace.Traces) er
 // applyVerdict runs the per-step check on one span and enacts the configured
 // mode. Returns true only when the span must be removed (drop mode + flagged).
 func (p *guardProcessor) applyVerdict(span ptrace.Span) bool {
+	// Accumulate trajectory state for every span, even ones dropped below, so
+	// multi-step invariants (Level 1) see the full action history.
+	p.tracker.observe(span)
+
 	violation, flagged := checkPerStep(p.cfg, span)
 	if !flagged {
 		return false

@@ -3,6 +3,7 @@ package agenttrajectoryguard
 import (
 	"context"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -46,6 +47,45 @@ func newGenAITrace(opName, toolName string) ptrace.Traces {
 		span.Attributes().PutStr(attrToolName, toolName)
 	}
 	return td
+}
+
+func TestProcessorAccumulatesAcrossBatches(t *testing.T) {
+	sink := &consumertest.TracesSink{}
+	cfg := &Config{Mode: ModeAnnotate, EvictionTimeout: time.Minute}
+	p := newGuardProcessor(processortest.NewNopSettings(componentType), cfg, sink)
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
+	p.tracker.now = clk.now
+
+	// Two separate batches, same trace_id — state must accumulate.
+	batch := func(op, tool, args string) ptrace.Traces {
+		td := ptrace.NewTraces()
+		s := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		s.SetTraceID(traceA)
+		s.Attributes().PutStr(attrOperationName, op)
+		if tool != "" {
+			s.Attributes().PutStr(attrToolName, tool)
+			s.Attributes().PutStr(attrToolCallArgs, args)
+		}
+		return td
+	}
+	_ = p.ConsumeTraces(context.Background(), batch("execute_tool", "read_file", "/data/a"))
+	_ = p.ConsumeTraces(context.Background(), batch("execute_tool", "write_file", "/data/b"))
+
+	if p.tracker.activeCount() != 1 {
+		t.Fatalf("active = %d, want 1", p.tracker.activeCount())
+	}
+	p.tracker.mu.Lock()
+	steps := len(p.tracker.active[traceA].steps)
+	p.tracker.mu.Unlock()
+	if steps != 2 {
+		t.Errorf("accumulated steps = %d, want 2", steps)
+	}
+
+	// And it reaps once stale.
+	clk.advance(2 * time.Minute)
+	if ev := p.tracker.reapOnce(); len(ev) != 1 {
+		t.Errorf("reaped %d, want 1", len(ev))
+	}
 }
 
 func TestConsumeTracesPassesThrough(t *testing.T) {
