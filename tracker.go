@@ -63,8 +63,9 @@ func newTracker(cfg *Config, logger *zap.Logger) *tracker {
 }
 
 // observe records every step a span contributes into its trajectory state,
-// creating the state on first sight of a trace_id.
-func (t *tracker) observe(span ptrace.Span) {
+// creating the state on first sight of a trace_id, and runs the stateful
+// Level 1a taint invariant. Returns the violations triggered by this span.
+func (t *tracker) observe(span ptrace.Span) []string {
 	traceID := span.TraceID()
 	opName := stringAttr(span.Attributes(), attrOperationName)
 
@@ -87,15 +88,21 @@ func (t *tracker) observe(span ptrace.Span) {
 		st.rootClosed = true
 	}
 
+	var violations []string
 	for _, tc := range extractToolCalls(span) {
-		st.steps = append(st.steps, Step{
+		step := Step{
 			spanID:   span.SpanID(),
 			opName:   opName,
 			toolName: tc.name,
 			args:     tc.args,
 			ts:       now,
-		})
+		}
+		st.steps = append(st.steps, step)
+		if v, ok := applyTaint(st, step, t.cfg); ok {
+			violations = append(violations, v)
+		}
 	}
+	return violations
 }
 
 // reapOnce evicts and returns trajectories that are complete (rootClosed) or

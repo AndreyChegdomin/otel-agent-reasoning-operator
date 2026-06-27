@@ -38,7 +38,13 @@ type Config struct {
 	// ProtectedResources lists resource identifiers (substrings, matched
 	// case-insensitively against span attribute values) that must not be the
 	// target of a destructive tool. Empty means Level 0 never flags.
+	// These also seed Level 1a taint tracking.
 	ProtectedResources []string `mapstructure:"protected_resources"`
+
+	// EgressTools is the set of gen_ai.tool.name values that send data out of
+	// the trust boundary (send_email, http_post, upload, ...). A tainted value
+	// reaching one of these is the Level 1a exfiltration violation.
+	EgressTools []string `mapstructure:"egress_tools"`
 }
 
 // Validate implements component.ConfigValidator.

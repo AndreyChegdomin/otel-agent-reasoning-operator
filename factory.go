@@ -37,10 +37,15 @@ func createDefaultConfig() component.Config {
 	return &Config{
 		Mode:            ModeAnnotate,
 		EvictionTimeout: 5 * time.Minute,
-		// Common destructive/egress tool names; ProtectedResources is left
-		// empty so the operator must opt in to what is actually protected.
+		// Common destructive tool names; ProtectedResources is left empty so the
+		// operator must opt in to what is actually protected.
 		DestructiveTools:   []string{"delete_file", "rm", "drop_table", "delete_object"},
 		ProtectedResources: nil,
+		// Common egress tool names for Level 1a taint exfiltration.
+		EgressTools: []string{
+			"send_email", "http_post", "http_request", "upload_file",
+			"send_message", "publish", "put_object", "webhook",
+		},
 	}
 }
 

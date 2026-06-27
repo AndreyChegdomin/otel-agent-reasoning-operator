@@ -71,27 +71,35 @@ func (p *guardProcessor) ConsumeTraces(ctx context.Context, td ptrace.Traces) er
 // applyVerdict runs the per-step check on one span and enacts the configured
 // mode. Returns true only when the span must be removed (drop mode + flagged).
 func (p *guardProcessor) applyVerdict(span ptrace.Span) bool {
-	// Accumulate trajectory state for every span, even ones dropped below, so
-	// multi-step invariants (Level 1) see the full action history.
-	p.tracker.observe(span)
-
-	violation, flagged := checkPerStep(p.cfg, span)
-	if !flagged {
+	// Level 1a (stateful): accumulate trajectory state for every span, even
+	// ones dropped below, so taint sees the full action history.
+	violations := p.tracker.observe(span)
+	// Level 0 (stateless) per-step check.
+	if v, ok := checkPerStep(p.cfg, span); ok {
+		violations = append(violations, v)
+	}
+	if len(violations) == 0 {
 		return false
 	}
+
+	// Taint violations come first from observe(), so the primary verdict
+	// favors the multi-step finding over the per-step one.
+	primary := violations[0]
 	if p.cfg.Mode == ModeDrop {
 		p.logger.Warn("dropping offending span",
 			zap.String("trace_id", span.TraceID().String()),
 			zap.String("span_id", span.SpanID().String()),
-			zap.String("violation", violation),
+			zap.String("violation", primary),
+			zap.Strings("violations", violations),
 		)
 		return true
 	}
-	span.Attributes().PutStr(attrViolation, violation)
+	span.Attributes().PutStr(attrViolation, primary)
 	p.logger.Warn("flagged offending span",
 		zap.String("trace_id", span.TraceID().String()),
 		zap.String("span_id", span.SpanID().String()),
-		zap.String("violation", violation),
+		zap.String("violation", primary),
+		zap.Strings("violations", violations),
 	)
 	return false
 }
