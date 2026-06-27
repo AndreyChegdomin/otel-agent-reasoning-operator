@@ -76,6 +76,9 @@ func TestMatchesProtectedText(t *testing.T) {
 		{"dotted name as own token", []string{"production.db"}, "migrated production.db yesterday", true},
 		{"real path arg", []string{"/etc/secrets"}, `{"file":"/etc/secrets/key.pem"}`, true},
 		{"path mention inside sentence", []string{"/etc/secrets"}, "please read /etc/secrets/key.pem later", true},
+		// plain identifiers must match in free text (rule 3 alive in Level 0):
+		{"plain id in SQL", []string{"production_db"}, "DROP TABLE production_db", true},
+		{"plain id drop_table", []string{"drop_table"}, "exec drop_table on prod", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -83,6 +86,45 @@ func TestMatchesProtectedText(t *testing.T) {
 				t.Errorf("matchesProtectedText(%v, %q) = %v, want %v", tc.protected, tc.text, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestArgTokensSharedTokenizer confirms argTokens keeps path/identifier tokens
+// intact (does not split on _ . / @ -) and that splitTokens uses the SAME
+// tokenizer (single shared func), so perstep and taint tokenize identically.
+func TestArgTokensSharedTokenizer(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{`{"src":"/etc/secrets/x","dst":"/tmp/y"}`, []string{"src", "/etc/secrets/x", "dst", "/tmp/y"}},
+		{"DROP TABLE production_db", []string{"DROP", "TABLE", "production_db"}},
+		{"grep -rn secrets .", []string{"grep", "-rn", "secrets", "."}},
+		{"a@b.c x-y_z", []string{"a@b.c", "x-y_z"}},
+	}
+	for _, tc := range cases {
+		got := argTokens(tc.in)
+		if len(got) != len(tc.want) {
+			t.Fatalf("argTokens(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("argTokens(%q)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
+	// splitTokens is a filtered view over the SAME argTokens output: every
+	// splitTokens result must be one of the raw argTokens for that input.
+	cfg := &Config{ProtectedResources: []string{"production_db"}, DestructiveTools: []string{"drop_table"}}
+	in := "DROP TABLE production_db via drop_table"
+	raw := map[string]bool{}
+	for _, tok := range argTokens(in) {
+		raw[tok] = true
+	}
+	for _, tok := range splitTokens(in, cfg) {
+		if !raw[tok] {
+			t.Errorf("splitTokens produced %q not in argTokens output (tokenizers diverged)", tok)
+		}
 	}
 }
 

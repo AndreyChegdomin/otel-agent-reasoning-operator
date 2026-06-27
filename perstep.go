@@ -76,17 +76,32 @@ func matchesProtectedToken(protected []string, token string) bool {
 	return false
 }
 
-// matchesProtectedText tokenizes a free-text arg blob and reports whether any
-// resource-shaped candidate token (a path/URL/dotted name — one containing
-// "/", "." or "@") matches a protected entry. Bare-word mentions in commands
-// (e.g. "grep secrets") are intentionally NOT candidates: mention != access.
-// Used only by the Level 0 call site, which passes the whole args blob.
+// matchesProtectedText tokenizes a free-text arg blob and runs the per-token
+// matcher on every resource-shaped candidate token. A candidate is any token
+// carrying a non-letter character (a path/URL/dotted-or-underscored identifier
+// such as "/etc/secrets", "production.db", "production_db", "drop_table"); a
+// bare run of letters (e.g. "secrets" in "grep secrets") is a mention, not a
+// resource reference, and is not a candidate. Letting the per-token matcher
+// then decide is what makes plain identifiers (rule 3) work in Level 0 free
+// text, while still ignoring bare-word mentions. Used only by Level 0.
 func matchesProtectedText(protected []string, text string) bool {
 	if text == "" || len(protected) == 0 {
 		return false
 	}
 	for _, tok := range argTokens(text) {
-		if strings.ContainsAny(tok, "/.@") && matchesProtectedToken(protected, tok) {
+		if isResourceShaped(tok) && matchesProtectedToken(protected, tok) {
+			return true
+		}
+	}
+	return false
+}
+
+// isResourceShaped reports whether a token looks like a resource reference
+// rather than a bare word: it contains at least one non-ASCII-letter rune
+// (digit, "/", ".", "_", "-", "@", ...). A pure run of letters does not qualify.
+func isResourceShaped(tok string) bool {
+	for _, r := range tok {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
 			return true
 		}
 	}
