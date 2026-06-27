@@ -19,6 +19,9 @@ processors:
     eviction_timeout: 5m
     # Level 0 + Level 1a seeds:
     destructive_tools: [delete_file, rm, drop_table, delete_object]
+    # protected_resources: use resource-specific entries — concrete paths,
+    # globs, or structured identifiers (snake_case). Never bare words like
+    # "secrets"/"data" (matched as mentions, not resources → won't fire).
     protected_resources: ["/etc/secrets/", "production.db", "**/.env"]
     # Level 1a egress surface:
     egress_tools: [send_email, http_post, http_request, upload_file]

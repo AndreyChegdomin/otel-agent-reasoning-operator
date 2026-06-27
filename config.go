@@ -45,6 +45,14 @@ type Config struct {
 	//   - plain identifiers (e.g. "production_db"): whole-token,
 	//     case-insensitive equality (not a substring of another word).
 	// Empty means Level 0 never flags. These also seed Level 1a taint tracking.
+	//
+	// GUIDANCE: entries MUST be resource-specific — concrete paths
+	// ("/etc/secrets"), globs ("**/.env", "**/secrets/**"), or structured
+	// identifiers ("production_db"). Do NOT use bare common words ("secrets",
+	// "data"): a bare word in free-text args is treated as a mention, not a
+	// resource reference, so it will not match at Level 0 (and would only invite
+	// false positives if it did). Specificity in config is what keeps detection
+	// precise.
 	ProtectedResources []string `mapstructure:"protected_resources"`
 
 	// EgressTools is the set of gen_ai.tool.name values that send data out of
