@@ -1,0 +1,12 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+
+# Custom collector built via OCB
+/_build/
+otelcol-trajectory-guard
+
+# Go
+*.test
+*.out
