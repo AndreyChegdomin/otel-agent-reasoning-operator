@@ -37,6 +37,10 @@ type TrajectoryState struct {
 	lastActivity time.Time
 	rootClosed   bool // invoke_agent span observed (trajectory likely complete)
 	emitted      bool // final verdict already emitted on eviction
+
+	// pendingIntent is the most recent declared intent (Level 2): tools the
+	// reasoning said it would use, awaiting comparison to actual actions.
+	pendingIntent []string
 }
 
 // tracker holds live trajectories keyed by trace_id. The mutex guards both the
@@ -88,6 +92,16 @@ func (t *tracker) observe(span ptrace.Span) []string {
 		st.rootClosed = true
 	}
 
+	// Level 2: refresh declared intent from this span's reasoning, if any, so
+	// subsequent actions in the trajectory can be compared against it.
+	if t.cfg.ConsistencyEnabled {
+		if reasoning := extractReasoning(span); reasoning != "" {
+			if declared := declaredTools(reasoning, consistencyVocab(t.cfg)); len(declared) > 0 {
+				st.pendingIntent = declared
+			}
+		}
+	}
+
 	var violations []string
 	for _, tc := range extractToolCalls(span) {
 		step := Step{
@@ -104,6 +118,9 @@ func (t *tracker) observe(span ptrace.Span) []string {
 			violations = append(violations, v)
 		}
 		violations = append(violations, runInvariants(st, step, t.cfg)...)
+		if v, ok := checkConsistency(st, step, t.cfg); ok {
+			violations = append(violations, v)
+		}
 	}
 	return violations
 }

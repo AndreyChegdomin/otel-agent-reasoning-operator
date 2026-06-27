@@ -1,0 +1,40 @@
+# Example collector pipeline wiring the agent-trajectory-guard processor.
+# Run the built binary with:
+#   ./_build/otelcol-trajectory-guard --config config.yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  agenttrajectoryguard:
+    mode: annotate            # annotate | drop
+    eviction_timeout: 5m
+    # Level 0 + Level 1a seeds:
+    destructive_tools: [delete_file, rm, drop_table, delete_object]
+    protected_resources: ["/etc/secrets", "production.db"]
+    # Level 1a egress surface:
+    egress_tools: [send_email, http_post, http_request, upload_file]
+    # Level 1b invariants (opt-in):
+    max_deletes: 5
+    forbidden_orderings:
+      - first: read_file
+        then: http_post
+    max_actions_per_window: 50
+    rate_window: 10s
+    # Level 2 (opt-in, weakest layer):
+    consistency_enabled: false
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [agenttrajectoryguard]
+      exporters: [debug]

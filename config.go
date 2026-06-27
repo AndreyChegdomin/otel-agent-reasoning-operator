@@ -60,6 +60,13 @@ type Config struct {
 	// MaxActionsPerWindow steps within a trailing RateWindow. Both must be set.
 	MaxActionsPerWindow int           `mapstructure:"max_actions_per_window"`
 	RateWindow          time.Duration `mapstructure:"rate_window"`
+
+	// --- Level 2 reasoning<->action consistency (opt-in; weakest layer) ---
+
+	// ConsistencyEnabled turns on best-effort reasoning/action mismatch
+	// detection. Off by default: reasoning is untrusted and this layer is
+	// false-positive prone; the safety case does not depend on it.
+	ConsistencyEnabled bool `mapstructure:"consistency_enabled"`
 }
 
 // OrderingRule is a forbidden temporal ordering of two tools within one
