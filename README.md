@@ -37,7 +37,7 @@ OTel-emitting framework and any OTLP backend.
 
 | Level | File | What it catches |
 |-------|------|-----------------|
-| **0 — per-step** (stateless) | `perstep.go` | A single destructive tool call against a protected resource → `protected_resource_destruction`. |
+| **0 — per-step** (stateless) | `perstep.go` | A single destructive tool call against a protected resource (matched by path segment / glob / whole token, **not substring**) → `protected_resource_destruction`. |
 | **1a — taint tracking** (the heart) | `taint.go` | A value derived from a protected resource reaching an egress action through a benign-looking chain → `taint_exfiltration`. **Directed data-flow by argument role** (tainted source → sink), not co-occurrence. |
 | **1b — state-machine invariants** | `invariants.go` | `excessive_deletion`, `forbidden_ordering`, `action_rate_anomaly` (all opt-in). |
 | **1c — shape-only** (payload-free) | `shape.go` | `size_exfil_silhouette` (large read → comparable egress by size), `suspicious_sequence:<name>` (bad tool-class sequence), reuses `action_rate_anomaly`. Needs **no argument payloads**. |
@@ -136,6 +136,12 @@ processors:
   heuristic, tunable via `taint_source_keys` / `taint_sink_keys`; unkeyed
   (non-JSON) args fall back to a conservative source∪sink treatment unless
   `taint_strict_roles` is set.
+- Protected-resource matching (Level 0 seed and Level 1a taint seed) is by
+  **path segment / doublestar glob / whole token — not substring**. A free-text
+  *mention* of a protected name (`grep secrets`, `secrets_test.go`,
+  `/etc/secretsfoo`) is intentionally **not** flagged: mention ≠ access. This is
+  a deliberate false-positive reduction; tune with paths/globs
+  (`/etc/secrets`, `**/.env`) rather than bare words.
 - Per-trajectory caps (`max_steps_per_trajectory`, `max_taint_entries`) and a
   JSON-depth limit bound memory/stack against adversarial floods; tripping a cap
   emits `trajectory_capacity_exceeded` (deep args emit `args_too_deep`).

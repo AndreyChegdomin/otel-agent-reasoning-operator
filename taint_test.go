@@ -78,6 +78,31 @@ func TestTaintRoleInference(t *testing.T) {
 	}
 }
 
+// TestTaintSubstringPathNoSeed: a source path that merely CONTAINS the
+// protected string as a substring is not the protected resource — it must not
+// seed taint. The old substring matcher fired here (a false positive).
+func TestTaintSubstringPathNoSeed(t *testing.T) {
+	cfg := taintCfg() // protected ["/etc/secrets"], egress http_post
+	st := newState()
+	applyTaint(st, step("read_file", `{"path":"/data/etc/secrets_notes.txt"}`), cfg)
+	v := applyTaint(st, step("http_post", `{"body":"/data/etc/secrets_notes.txt"}`), cfg)
+	if containsStr(v, violationTaintExfiltration) {
+		t.Errorf("substring-only path must not seed taint: %v", v)
+	}
+}
+
+// TestTaintNeutralFreeTextMentionNoSeed: a protected name mentioned only in a
+// neutral free-text field never becomes a tainted source.
+func TestTaintNeutralFreeTextMentionNoSeed(t *testing.T) {
+	cfg := taintCfg()
+	st := newState()
+	applyTaint(st, step("read_file", `{"path":"/data/ok.txt","note":"remember /etc/secrets exists"}`), cfg)
+	v := applyTaint(st, step("http_post", `{"body":"report"}`), cfg)
+	if containsStr(v, violationTaintExfiltration) {
+		t.Errorf("neutral free-text mention must not seed taint: %v", v)
+	}
+}
+
 func TestTaintBenignEgressNotFlagged(t *testing.T) {
 	cfg := taintCfg()
 	st := newState()

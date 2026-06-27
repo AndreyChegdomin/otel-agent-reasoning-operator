@@ -3,6 +3,7 @@ module github.com/AndreyChegdomin/otel-agent-reasoning-operator
 go 1.26.2
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	go.opentelemetry.io/collector/component v1.61.0
 	go.opentelemetry.io/collector/consumer v1.61.0
 	go.opentelemetry.io/collector/consumer/consumertest v0.155.0

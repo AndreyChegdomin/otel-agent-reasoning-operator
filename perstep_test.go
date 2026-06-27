@@ -33,6 +33,59 @@ func toolSpan(tool, target string) ptrace.Span {
 	return span
 }
 
+// TestMatchesProtectedToken covers boundary-aware matching of a single token:
+// glob (rule 1), path segment/prefix (rule 2), whole-token identifier (rule 3).
+func TestMatchesProtectedToken(t *testing.T) {
+	cases := []struct {
+		name      string
+		protected []string
+		token     string
+		want      bool
+	}{
+		// positives — real access
+		{"path dir-prefix", []string{"/etc/secrets"}, "/etc/secrets/db", true},
+		{"path exact", []string{"/etc/secrets"}, "/etc/secrets", true},
+		{"glob dotfile", []string{"**/.env"}, "/app/config/.env", true},
+		{"glob nested", []string{"**/secrets/**"}, "/var/secrets/db/pw", true},
+		{"plain identifier", []string{"production_db"}, "production_db", true},
+		// negatives — the false positives we are killing
+		{"path not on boundary", []string{"/etc/secrets"}, "/etc/secretsfoo/x", false},
+		{"identifier not whole token", []string{"production_db"}, "myproduction_db_backup", false},
+		{"identifier substring", []string{"secrets"}, "secrets_test.go", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesProtectedToken(tc.protected, tc.token); got != tc.want {
+				t.Errorf("matchesProtectedToken(%v, %q) = %v, want %v", tc.protected, tc.token, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMatchesProtectedText covers the free-text (Level 0) call site: only
+// resource-shaped tokens are candidates, so bare-word mentions don't match.
+func TestMatchesProtectedText(t *testing.T) {
+	cases := []struct {
+		name      string
+		protected []string
+		text      string
+		want      bool
+	}{
+		{"bare word in command", []string{"secrets"}, "grep -rn secrets .", false},
+		{"substring filename", []string{"secrets"}, "secrets_test.go", false},
+		{"dotted name as own token", []string{"production.db"}, "migrated production.db yesterday", true},
+		{"real path arg", []string{"/etc/secrets"}, `{"file":"/etc/secrets/key.pem"}`, true},
+		{"path mention inside sentence", []string{"/etc/secrets"}, "please read /etc/secrets/key.pem later", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesProtectedText(tc.protected, tc.text); got != tc.want {
+				t.Errorf("matchesProtectedText(%v, %q) = %v, want %v", tc.protected, tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCheckPerStep(t *testing.T) {
 	cfg := testPerStepConfig()
 	cases := []struct {

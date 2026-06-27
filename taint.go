@@ -85,7 +85,7 @@ func applyTaint(st *TrajectoryState, step Step, cfg *Config) []string {
 // protected resource (the taint seed).
 func anyTainted(st *TrajectoryState, cfg *Config, tokens []string) bool {
 	for _, tok := range tokens {
-		if st.taintSet[tok] || matchesProtected(cfg.ProtectedResources, tok) {
+		if st.taintSet[tok] || matchesProtectedToken(cfg.ProtectedResources, tok) {
 			return true
 		}
 	}
@@ -183,7 +183,25 @@ func keySet(defaults, extra []string) map[string]bool {
 // token that matches a configured protected resource or destructive tool, so
 // non-path identifiers such as a table name "production_db" are still caught.
 func splitTokens(s string, cfg *Config) []string {
-	fields := strings.FieldsFunc(s, func(r rune) bool {
+	var out []string
+	for _, f := range argTokens(s) {
+		if len(f) <= 1 {
+			continue
+		}
+		if strings.ContainsAny(f, "/.@") ||
+			matchesProtectedToken(cfg.ProtectedResources, f) ||
+			containsFold(cfg.DestructiveTools, f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// argTokens splits a non-JSON arg blob on structural delimiters while keeping
+// path/identifier characters intact, so a path like /etc/secrets/x stays a
+// single token. Shared by splitTokens and matchesProtectedText.
+func argTokens(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
 		switch r {
 		case ' ', '\t', '\n', '\r', ',', ';', ':', '=', '"', '\'',
 			'{', '}', '[', ']', '(', ')', '<', '>', '|':
@@ -191,16 +209,4 @@ func splitTokens(s string, cfg *Config) []string {
 		}
 		return false
 	})
-	var out []string
-	for _, f := range fields {
-		if len(f) <= 1 {
-			continue
-		}
-		if strings.ContainsAny(f, "/.@") ||
-			matchesProtected(cfg.ProtectedResources, f) ||
-			containsFold(cfg.DestructiveTools, f) {
-			out = append(out, f)
-		}
-	}
-	return out
 }

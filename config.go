@@ -35,10 +35,16 @@ type Config struct {
 	// without any trajectory state.
 	DestructiveTools []string `mapstructure:"destructive_tools"`
 
-	// ProtectedResources lists resource identifiers (substrings, matched
-	// case-insensitively against span attribute values) that must not be the
-	// target of a destructive tool. Empty means Level 0 never flags.
-	// These also seed Level 1a taint tracking.
+	// ProtectedResources lists protected resource identifiers. Matching is
+	// resource-boundary aware, NOT substring, so a mere mention never matches:
+	//   - path patterns (contain "/", e.g. "/etc/secrets"): exact or
+	//     segment-prefix match ("/etc/secrets" protects "/etc/secrets/db" but
+	//     not "/etc/secretsfoo");
+	//   - glob patterns (contain * or ?, e.g. "**/.env", "**/secrets/**"):
+	//     doublestar match against path-like candidates;
+	//   - plain identifiers (e.g. "production_db"): whole-token,
+	//     case-insensitive equality (not a substring of another word).
+	// Empty means Level 0 never flags. These also seed Level 1a taint tracking.
 	ProtectedResources []string `mapstructure:"protected_resources"`
 
 	// EgressTools is the set of gen_ai.tool.name values that send data out of
