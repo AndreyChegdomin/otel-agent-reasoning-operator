@@ -23,6 +23,8 @@ processors:
 exporters:
   # debug exporter prints spans (and our security.violation annotations) to stdout.
   - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.155.0
+  # file exporter captures the annotated output as JSON for offline analysis.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.155.0
 
 replaces:
   - github.com/AndreyChegdomin/otel-agent-reasoning-operator => ../

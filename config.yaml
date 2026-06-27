@@ -1,6 +1,10 @@
 # Example collector pipeline wiring the agent-trajectory-guard processor.
 # Run the built binary with:
 #   ./_build/otelcol-trajectory-guard --config config.yaml
+#
+# NOTE (see REAL_RUN_NOTES.md): keep destructive_tools to specific tools (not a
+# broad shell tool like Bash) and protected_resources to concrete paths/globs
+# (not broad substrings), or Level 0 over-flags on benign commands.
 receivers:
   otlp:
     protocols:
@@ -15,26 +19,30 @@ processors:
     eviction_timeout: 5m
     # Level 0 + Level 1a seeds:
     destructive_tools: [delete_file, rm, drop_table, delete_object]
-    protected_resources: ["/etc/secrets", "production.db"]
+    protected_resources: ["/etc/secrets/", "production.db", "**/.env"]
     # Level 1a egress surface:
     egress_tools: [send_email, http_post, http_request, upload_file]
-    # Level 1b invariants (opt-in):
-    max_deletes: 5
-    forbidden_orderings:
-      - first: read_file
-        then: http_post
-    max_actions_per_window: 50
-    rate_window: 10s
-    # Level 2 (opt-in, weakest layer):
+    # Level 1a directed-taint role keys: extend to match your instrumentation's
+    # argument schema (e.g. Claude Code-style tools use file_path / command):
+    # taint_source_keys: [file_path, command, content]
+    # taint_sink_keys: [file_path]
+    taint_strict_roles: false
+    # Capacity caps (anti-DoS):
+    max_steps_per_trajectory: 10000
+    max_taint_entries: 50000
+    # Level 1b/2 are opt-in:
+    max_deletes: 0
     consistency_enabled: false
 
 exporters:
   debug:
-    verbosity: detailed
+    verbosity: detailed       # prints spans + our security.violation attrs
+  file:
+    path: ./run-output.json   # capture annotated output as JSON for analysis
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [agenttrajectoryguard]
-      exporters: [debug]
+      exporters: [debug, file]

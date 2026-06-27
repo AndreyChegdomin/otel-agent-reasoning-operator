@@ -1,0 +1,63 @@
+{
+  "resourceSpans": [{
+    "scopeSpans": [{
+      "spans": [
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000001","name":"read","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Read"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"file_path\":\"/Users/andreybondar/Documents/workdir/otel-operator/taint.go\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000002","name":"read","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Read"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"file_path\":\"/Users/andreybondar/Documents/workdir/otel-operator/tracker.go\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000003","name":"bash","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Bash"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"command\":\"go test ./...\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000004","name":"bash","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Bash"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"command\":\"grep -rn secrets --include=*.go .\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000005","name":"write","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Write"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"file_path\":\"/Users/andreybondar/Documents/workdir/otel-operator/taint_test.go\",\"content\":\"ProtectedResources: []string{\\\"/etc/secrets\\\"}\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000006","name":"edit","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Edit"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"file_path\":\"/Users/andreybondar/Documents/workdir/otel-operator/config.go\",\"old_string\":\"EgressTools []string\",\"new_string\":\"EgressTools []string // egress\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000007","name":"webfetch","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"WebFetch"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"url\":\"https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/\",\"prompt\":\"list attribute keys\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000008","name":"webfetch","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"WebFetch"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"url\":\"https://raw.githubusercontent.com/open-telemetry/semantic-conventions-genai/main/docs/gen-ai/gen-ai-spans.md\",\"prompt\":\"quote tool keys\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"0000000000000009","name":"bash","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Bash"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"command\":\"go run go.opentelemetry.io/collector/cmd/builder@v0.155.0 --config builder-config.yaml\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"000000000000000a","name":"bash","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Bash"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"command\":\"git commit -q -m review-fixes\"}"}}
+        ]},
+        {"traceId":"11111111111111111111111111111111","spanId":"000000000000000b","name":"bash","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"Bash"}},
+          {"key":"gen_ai.tool.call.arguments","value":{"stringValue":"{\"command\":\"git push -u origin main\"}"}}
+        ]}
+      ]
+    }]
+  }]
+}
