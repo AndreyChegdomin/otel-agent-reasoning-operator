@@ -28,6 +28,11 @@ type Step struct {
 	toolName string
 	args     string
 	ts       time.Time
+
+	// Payload-free signals for Level 1c shape detection. Sizes are byte counts
+	// that survive privacy redaction; 0 means "unknown" (detectors skip it).
+	inputSize  int64
+	resultSize int64
 }
 
 // TrajectoryState is the accumulated, ordered history for one trace_id. It is
@@ -112,6 +117,8 @@ func (t *tracker) observe(span ptrace.Span) []string {
 		}
 	}
 
+	spanIn, spanOut := extractSizes(span)
+
 	var violations []string
 	for _, tc := range extractToolCalls(span) {
 		// Capacity cap: stop growing this trajectory once over the step limit.
@@ -119,12 +126,20 @@ func (t *tracker) observe(span ptrace.Span) []string {
 			st.truncated = true
 			break
 		}
+		// Input size: prefer the redaction-safe size attribute; fall back to the
+		// arg length only when the payload itself is present (self-hosted case).
+		inSize := spanIn
+		if inSize == 0 && tc.args != "" {
+			inSize = int64(len(tc.args))
+		}
 		step := Step{
-			spanID:   span.SpanID(),
-			opName:   opName,
-			toolName: tc.name,
-			args:     tc.args,
-			ts:       now,
+			spanID:     span.SpanID(),
+			opName:     opName,
+			toolName:   tc.name,
+			args:       tc.args,
+			ts:         now,
+			inputSize:  inSize,
+			resultSize: spanOut,
 		}
 		st.steps = append(st.steps, step)
 		// Level 1a taint (outranks later levels), then Level 1b invariants,
@@ -133,6 +148,10 @@ func (t *tracker) observe(span ptrace.Span) []string {
 		violations = append(violations, runInvariants(st, step, t.cfg)...)
 		if v, ok := checkConsistency(st, step, t.cfg); ok {
 			violations = append(violations, v)
+		}
+		// Level 1c shape-only detectors (payload-free).
+		if t.cfg.ShapeDetectorsEnabled {
+			violations = append(violations, runShapeDetectors(st, t.cfg)...)
 		}
 	}
 

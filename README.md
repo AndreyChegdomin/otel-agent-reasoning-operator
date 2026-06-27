@@ -40,6 +40,7 @@ OTel-emitting framework and any OTLP backend.
 | **0 — per-step** (stateless) | `perstep.go` | A single destructive tool call against a protected resource → `protected_resource_destruction`. |
 | **1a — taint tracking** (the heart) | `taint.go` | A value derived from a protected resource reaching an egress action through a benign-looking chain → `taint_exfiltration`. **Directed data-flow by argument role** (tainted source → sink), not co-occurrence. |
 | **1b — state-machine invariants** | `invariants.go` | `excessive_deletion`, `forbidden_ordering`, `action_rate_anomaly` (all opt-in). |
+| **1c — shape-only** (payload-free) | `shape.go` | `size_exfil_silhouette` (large read → comparable egress by size), `suspicious_sequence:<name>` (bad tool-class sequence), reuses `action_rate_anomaly`. Needs **no argument payloads**. |
 | **2 — reasoning↔action consistency** | `consistency.go` | Declared intent ≠ actual action → `reasoning_action_mismatch` (opt-in, weakest layer). |
 
 ### The fork (why Level 2 being weak doesn't matter)
@@ -61,6 +62,22 @@ Real instrumentations place tool calls differently. The normalization layer
 | OTel GenAI (canonical) | `gen_ai.operation.name=execute_tool` | `gen_ai.tool.name` | `gen_ai.tool.call.arguments` |
 | OpenInference | `openinference.span.kind=TOOL` | `tool.name` | `tool.parameters` / `input.value` |
 | OpenLLMetry | nested on chat span | `gen_ai.completion.{c}.tool_calls.{t}.name` | `…tool_calls.{t}.arguments` |
+
+## Telemetry requirements — content-aware vs shape-only
+
+Different layers need different telemetry. This matters because many production
+agents (e.g. Claude Code's native OTel) **deliberately omit tool-call argument
+payloads** for privacy, emitting only tool name, sizes (`tool_input_size_bytes`,
+`tool_result_size_bytes`), timing, and the call graph.
+
+| Layer | Needs | Works on |
+|---|---|---|
+| **1a taint** (content-aware) | tool-call **arguments** | self-hosted / fully-instrumented agents (OpenLLMetry / OpenInference with arg capture). **Inert** when args are redacted. |
+| **1c shape** (shape-only) | tool **name + size + timing + sequence** | privacy-preserving / managed agents that omit arg payloads. |
+
+**Privacy is a feature here:** Level 1c needs no argument payloads, so it runs on
+redacted telemetry **without ever seeing secrets**. Recommendation: enable 1c
+always; enable 1a additionally when arguments are present.
 
 ## Build & run
 
@@ -122,6 +139,10 @@ processors:
 - Per-trajectory caps (`max_steps_per_trajectory`, `max_taint_entries`) and a
   JSON-depth limit bound memory/stack against adversarial floods; tripping a cap
   emits `trajectory_capacity_exceeded` (deep args emit `args_too_deep`).
+- Level 1c shape detectors flag **silhouettes** (size/sequence/rate resembling
+  abuse); they cannot identify WHAT was accessed or leaked, only that the shape
+  is suspicious. They raise suspicion for review, not proof, and are tunable —
+  expect per-deployment tuning of thresholds, tool classes, and patterns.
 - No claim of completeness — by Rice's theorem no verifier catches all. The
   goal is to raise the cost of, and narrow the space of, undetected multi-step
   attacks.

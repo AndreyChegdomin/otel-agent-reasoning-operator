@@ -1,0 +1,18 @@
+{
+  "resourceSpans": [{
+    "scopeSpans": [{
+      "spans": [
+        {"traceId":"22222222222222222222222222222222","spanId":"0000000000000001","name":"read","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"read_file"}},
+          {"key":"tool_result_size_bytes","value":{"stringValue":"2000000"}}
+        ]},
+        {"traceId":"22222222222222222222222222222222","spanId":"0000000000000002","name":"egress","kind":1,"attributes":[
+          {"key":"gen_ai.operation.name","value":{"stringValue":"execute_tool"}},
+          {"key":"gen_ai.tool.name","value":{"stringValue":"http_post"}},
+          {"key":"tool_input_size_bytes","value":{"stringValue":"1500000"}}
+        ]}
+      ]
+    }]
+  }]
+}

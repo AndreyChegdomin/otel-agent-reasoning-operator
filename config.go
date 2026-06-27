@@ -86,6 +86,30 @@ type Config struct {
 	MaxActionsPerWindow int           `mapstructure:"max_actions_per_window"`
 	RateWindow          time.Duration `mapstructure:"rate_window"`
 
+	// --- Level 1c shape-only detectors (payload-free; no arg content needed) ---
+
+	// ShapeDetectorsEnabled turns on the Level 1c family (size/sequence
+	// silhouettes). Default on: it works on privacy-preserving telemetry that
+	// omits argument payloads.
+	ShapeDetectorsEnabled bool `mapstructure:"shape_detectors_enabled"`
+
+	// ReadTools / WriteTools classify tool names for shape detection (egress and
+	// destructive reuse EgressTools / DestructiveTools). First-match wins;
+	// unknown tools fall into class "other".
+	ReadTools  []string `mapstructure:"read_tools"`
+	WriteTools []string `mapstructure:"write_tools"`
+
+	// Size-correlation exfil silhouette (C1).
+	SizeReadThreshold  int64         `mapstructure:"size_read_threshold"`  // bytes; large-read trigger
+	SizeEgressRatio    float64       `mapstructure:"size_egress_ratio"`    // egress/read size ratio to flag
+	SizeWindowSteps    int           `mapstructure:"size_window_steps"`    // lookback in steps
+	SizeWindowDuration time.Duration `mapstructure:"size_window_duration"` // lookback in time
+
+	// SequencePatterns are named tool-CLASS sequences to flag (C2). Opt-in;
+	// empty disables. Pattern tokens are classes (read/write/egress/
+	// destructive/other) with an optional trailing "+" meaning one-or-more.
+	SequencePatterns []SequencePattern `mapstructure:"sequence_patterns"`
+
 	// --- Level 2 reasoning<->action consistency (opt-in; weakest layer) ---
 
 	// ConsistencyEnabled turns on best-effort reasoning/action mismatch
@@ -99,6 +123,13 @@ type Config struct {
 type OrderingRule struct {
 	First string `mapstructure:"first"`
 	Then  string `mapstructure:"then"`
+}
+
+// SequencePattern is a named tool-class sequence for Level 1c shape detection.
+// Each Pattern token is a class name with an optional trailing "+" (one-or-more).
+type SequencePattern struct {
+	Name    string   `mapstructure:"name"`
+	Pattern []string `mapstructure:"pattern"`
 }
 
 // Validate implements component.ConfigValidator.

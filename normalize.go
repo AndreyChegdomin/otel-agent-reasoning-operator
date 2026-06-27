@@ -2,6 +2,7 @@ package agenttrajectoryguard
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -31,6 +32,43 @@ const (
 type toolCall struct {
 	name string
 	args string // best-effort argument text (used for resource matching)
+}
+
+// Size attribute keys carrying payload-free byte counts (for Level 1c). These
+// survive privacy redaction that strips the argument content itself.
+var (
+	inputSizeKeys  = []string{"tool_input_size_bytes", "gen_ai.tool.call.arguments.size"}
+	resultSizeKeys = []string{"tool_result_size_bytes", "gen_ai.tool.call.result.size"}
+)
+
+// extractSizes reads the span-level input/result byte sizes, if present. Values
+// may be encoded as integers or numeric strings (Claude Code uses strings).
+// Returns 0 for an absent size; callers must not fabricate.
+func extractSizes(span ptrace.Span) (inputSize, resultSize int64) {
+	attrs := span.Attributes()
+	return int64Attr(attrs, inputSizeKeys), int64Attr(attrs, resultSizeKeys)
+}
+
+// int64Attr returns the first present key's value as int64, parsing numeric
+// strings, or 0 if none are present/parseable.
+func int64Attr(attrs pcommon.Map, keys []string) int64 {
+	for _, k := range keys {
+		v, ok := attrs.Get(k)
+		if !ok {
+			continue
+		}
+		switch v.Type() {
+		case pcommon.ValueTypeInt:
+			return v.Int()
+		case pcommon.ValueTypeDouble:
+			return int64(v.Double())
+		case pcommon.ValueTypeStr:
+			if n, err := strconv.ParseInt(strings.TrimSpace(v.Str()), 10, 64); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
 }
 
 // extractToolCalls returns the tool invocations carried by a span, recognizing

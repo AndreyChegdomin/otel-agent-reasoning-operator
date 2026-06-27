@@ -30,6 +30,17 @@ processors:
     # Capacity caps (anti-DoS):
     max_steps_per_trajectory: 10000
     max_taint_entries: 50000
+    # Level 1c shape-only detectors (payload-free; work on redacted telemetry):
+    shape_detectors_enabled: true
+    read_tools: [read_file, Read, get_object, cat, fetch]
+    write_tools: [write_file, Write, put_object]
+    size_read_threshold: 1000000      # bytes; large-read trigger
+    size_egress_ratio: 0.5            # egress/read size ratio to flag
+    size_window_steps: 10
+    size_window_duration: 60s
+    sequence_patterns:                # opt-in; empty = off
+      - name: recon_then_egress
+        pattern: [read+, egress]
     # Level 1b/2 are opt-in:
     max_deletes: 0
     consistency_enabled: false

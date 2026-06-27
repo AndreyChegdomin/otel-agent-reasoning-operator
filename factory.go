@@ -49,6 +49,15 @@ func createDefaultConfig() component.Config {
 		// Capacity caps (anti-DoS). Taint role keys use baked-in defaults.
 		MaxStepsPerTrajectory: 10000,
 		MaxTaintEntries:       50000,
+		// Level 1c shape-only detectors (on by default; payload-free).
+		ShapeDetectorsEnabled: true,
+		ReadTools:             []string{"read_file", "Read", "get_object", "cat", "fetch"},
+		WriteTools:            []string{"write_file", "Write", "put_object"},
+		SizeReadThreshold:     1000000,
+		SizeEgressRatio:       0.5,
+		SizeWindowSteps:       10,
+		SizeWindowDuration:    60 * time.Second,
+		// SequencePatterns left empty (opt-in).
 	}
 }
 
