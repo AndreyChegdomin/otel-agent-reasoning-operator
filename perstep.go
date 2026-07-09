@@ -108,7 +108,6 @@ func isResourceShaped(tok string) bool {
 	return false
 }
 
-// containsFold reports whether list contains target, case-insensitively.
 func containsFold(list []string, target string) bool {
 	for _, s := range list {
 		if strings.EqualFold(s, target) {

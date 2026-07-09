@@ -18,9 +18,9 @@ const attrOutputMessages = "gen_ai.output.messages"
 // events (an unstructured text blob per the GenAI conventions) and its output
 // messages attribute. Returned lowercased for case-insensitive matching.
 //
-// HARD CAVEAT: reasoning is attacker-controlled and may be fabricated. This is
-// best-effort; see the §4 fork — Level 1 catches harm regardless of what the
-// reasoning claims.
+// Reasoning is attacker-controlled and may be fabricated, so this check is
+// best-effort. Level 1 catches harm regardless of what the reasoning claims,
+// which is why this layer being weak is acceptable.
 func extractReasoning(span ptrace.Span) string {
 	var b strings.Builder
 	events := span.Events()
