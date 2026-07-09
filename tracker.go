@@ -47,6 +47,11 @@ type TrajectoryState struct {
 	rootClosed   bool // invoke_agent span observed (trajectory likely complete)
 	emitted      bool // final verdict already emitted on eviction
 
+	// violations accumulates every distinct violation name observed across the
+	// trajectory's lifetime, order-preserving and deduplicated. Consumed by
+	// the eviction-time trajectory-level verdict (Task 5).
+	violations []string
+
 	// pendingIntent is the most recent declared intent (Level 2): tools the
 	// reasoning said it would use, awaiting comparison to actual actions.
 	pendingIntent []string
@@ -79,6 +84,24 @@ func newTracker(cfg *Config, logger *zap.Logger) *tracker {
 		now:    time.Now,
 		stopCh: make(chan struct{}),
 	}
+}
+
+// appendUnique appends each element of src onto dst that is not already
+// present in dst, preserving the order src elements first appear in.
+func appendUnique(dst []string, src ...string) []string {
+	for _, v := range src {
+		found := false
+		for _, existing := range dst {
+			if existing == v {
+				found = true
+				break
+			}
+		}
+		if !found {
+			dst = append(dst, v)
+		}
+	}
+	return dst
 }
 
 // observe records every step a span contributes into its trajectory state,
@@ -144,22 +167,29 @@ func (t *tracker) observe(span ptrace.Span) []string {
 		st.steps = append(st.steps, step)
 		// Level 1a taint (outranks later levels), then Level 1b invariants,
 		// then Level 2 consistency. applyTaint may also enforce the taint cap.
-		violations = append(violations, applyTaint(st, step, t.cfg)...)
-		violations = append(violations, runInvariants(st, step, t.cfg)...)
+		// appendUnique dedups within this observe() call: a span carrying N
+		// tool calls that repeatedly hit the same rule reports it once.
+		violations = appendUnique(violations, applyTaint(st, step, t.cfg)...)
+		violations = appendUnique(violations, runInvariants(st, step, t.cfg)...)
 		if v, ok := checkConsistency(st, step, t.cfg); ok {
-			violations = append(violations, v)
+			violations = appendUnique(violations, v)
 		}
 		// Level 1c shape-only detectors (payload-free).
 		if t.cfg.ShapeDetectorsEnabled {
-			violations = append(violations, runShapeDetectors(st, t.cfg)...)
+			violations = appendUnique(violations, runShapeDetectors(st, t.cfg)...)
 		}
 	}
 
 	// Emit the capacity signal once, after any cap (steps or taint) tripped.
 	if st.truncated && !st.capacityEmitted {
 		st.capacityEmitted = true
-		violations = append(violations, violationCapacityExceeded)
+		violations = appendUnique(violations, violationCapacityExceeded)
 	}
+
+	// Accumulate into the trajectory-level record for Task 5's eviction-time
+	// verdict: order-preserving, deduplicated across the trajectory lifetime.
+	st.violations = appendUnique(st.violations, violations...)
+
 	return violations
 }
 

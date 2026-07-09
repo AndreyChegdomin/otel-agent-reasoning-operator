@@ -140,6 +140,79 @@ func TestTaintCapBoundsTaintSet(t *testing.T) {
 	}
 }
 
+// olmToolCallSpan builds an OpenLLMetry-style span carrying N tool calls
+// nested under gen_ai.completion.0.tool_calls.{i}.{name,arguments}.
+func olmToolCallSpan(traceID pcommon.TraceID, tools ...string) ptrace.Span {
+	s := newSpan()
+	s.SetTraceID(traceID)
+	a := s.Attributes()
+	a.PutStr(attrOperationName, "chat")
+	for i, tool := range tools {
+		a.PutStr("gen_ai.completion.0.tool_calls."+itoa(i)+".name", tool)
+		a.PutStr("gen_ai.completion.0.tool_calls."+itoa(i)+".arguments", "{}")
+	}
+	return s
+}
+
+func itoa(i int) string {
+	return string(rune('0' + i))
+}
+
+// TestObserveDedupesViolationWithinSingleSpan: a span with two tool calls
+// that both trigger the same rule (forbidden_ordering) must yield that
+// violation only once from a single observe() call.
+func TestObserveDedupesViolationWithinSingleSpan(t *testing.T) {
+	tr, _ := testTracker(time.Hour)
+	tr.cfg.ForbiddenOrderings = []OrderingRule{{First: "read_secret", Then: "send_email"}}
+
+	// Establish "read_secret" earlier in the trajectory.
+	tr.observe(spanIn(traceA, "execute_tool", "read_secret", ""))
+
+	// One span, two tool calls, both "send_email" -> both trigger
+	// forbidden_ordering against the same trajectory history.
+	violations := tr.observe(olmToolCallSpan(traceA, "send_email", "send_email"))
+
+	count := 0
+	for _, v := range violations {
+		if v == violationForbiddenOrdering {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("forbidden_ordering appeared %d times in observe() return, want 1 (dedup within call): %v", count, violations)
+	}
+}
+
+// TestStateViolationsAccumulateDeduped: violations across multiple observe
+// calls accumulate into TrajectoryState.violations, order-preserving and
+// deduplicated across calls.
+func TestStateViolationsAccumulateDeduped(t *testing.T) {
+	tr, _ := testTracker(time.Hour)
+	tr.cfg.ForbiddenOrderings = []OrderingRule{{First: "read_secret", Then: "send_email"}}
+	tr.cfg.MaxDeletes = 1
+	tr.cfg.DestructiveTools = []string{"delete_file"}
+
+	tr.observe(spanIn(traceA, "execute_tool", "read_secret", ""))
+	tr.observe(spanIn(traceA, "execute_tool", "send_email", ""))       // forbidden_ordering (1st)
+	tr.observe(spanIn(traceA, "execute_tool", "delete_file", ""))      // counter=1, no violation yet
+	tr.observe(spanIn(traceA, "execute_tool", "delete_file", ""))      // counter=2 -> excessive_deletion
+	tr.observe(spanIn(traceA, "execute_tool", "send_email", ""))       // forbidden_ordering again (dup)
+
+	tr.mu.Lock()
+	got := tr.active[traceA].violations
+	tr.mu.Unlock()
+
+	want := []string{violationForbiddenOrdering, violationExcessiveDeletion}
+	if len(got) != len(want) {
+		t.Fatalf("st.violations = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("st.violations = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestStartStopFlushes(t *testing.T) {
 	tr, _ := testTracker(time.Hour)
 	tr.start()
