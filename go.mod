@@ -1,4 +1,4 @@
-module github.com/AndreyChegdomin/otel-agent-reasoning-operator
+module github.com/AndreyChegdomin/agent-trajectory-guard
 
 go 1.26.2
 

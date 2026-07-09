@@ -17,7 +17,7 @@ receivers:
 processors:
   # The processor under development. `name` is the Go package name (it differs
   # from the module path's last segment), so OCB calls agenttrajectoryguard.NewFactory().
-  - gomod: github.com/AndreyChegdomin/otel-agent-reasoning-operator v0.0.0
+  - gomod: github.com/AndreyChegdomin/agent-trajectory-guard v0.0.0
     name: agenttrajectoryguard
 
 exporters:
@@ -27,4 +27,4 @@ exporters:
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.155.0
 
 replaces:
-  - github.com/AndreyChegdomin/otel-agent-reasoning-operator => ../
+  - github.com/AndreyChegdomin/agent-trajectory-guard => ../
