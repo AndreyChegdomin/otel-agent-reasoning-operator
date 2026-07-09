@@ -17,9 +17,10 @@ const (
 	ModeDrop VerdictMode = "drop"
 )
 
-// Config is the processor configuration. Only the fields needed for the
-// skeleton (mode + eviction timeout) are populated for now; invariant-specific
-// params (protected resources, thresholds) land with their respective levels.
+// Config is the processor configuration, grouped by detection level: mode and
+// eviction apply globally; the remaining fields configure Level 0 (per-step),
+// Level 1a (taint), capacity caps, Level 1b (invariants, opt-in), Level 1c
+// (shape-only), and Level 2 (consistency, opt-in) respectively.
 type Config struct {
 	// Mode selects verdict handling: "annotate" (default) or "drop".
 	Mode VerdictMode `mapstructure:"mode"`
@@ -35,24 +36,12 @@ type Config struct {
 	// without any trajectory state.
 	DestructiveTools []string `mapstructure:"destructive_tools"`
 
-	// ProtectedResources lists protected resource identifiers. Matching is
-	// resource-boundary aware, NOT substring, so a mere mention never matches:
-	//   - path patterns (contain "/", e.g. "/etc/secrets"): exact or
-	//     segment-prefix match ("/etc/secrets" protects "/etc/secrets/db" but
-	//     not "/etc/secretsfoo");
-	//   - glob patterns (contain * or ?, e.g. "**/.env", "**/secrets/**"):
-	//     doublestar match against path-like candidates;
-	//   - plain identifiers (e.g. "production_db"): whole-token,
-	//     case-insensitive equality (not a substring of another word).
-	// Empty means Level 0 never flags. These also seed Level 1a taint tracking.
-	//
-	// GUIDANCE: entries MUST be resource-specific — concrete paths
-	// ("/etc/secrets"), globs ("**/.env", "**/secrets/**"), or structured
-	// identifiers ("production_db"). Do NOT use bare common words ("secrets",
-	// "data"): a bare word in free-text args is treated as a mention, not a
-	// resource reference, so it will not match at Level 0 (and would only invite
-	// false positives if it did). Specificity in config is what keeps detection
-	// precise.
+	// ProtectedResources lists protected resource identifiers, matched by path
+	// segment/prefix, doublestar glob, or whole-token equality — never
+	// substring. Entries must be resource-specific (concrete paths, globs, or
+	// structured identifiers), not bare words. Empty means Level 0 never
+	// flags. These also seed Level 1a taint tracking. See
+	// docs/configuration.md for the full matching rules and rationale.
 	ProtectedResources []string `mapstructure:"protected_resources"`
 
 	// EgressTools is the set of gen_ai.tool.name values that send data out of

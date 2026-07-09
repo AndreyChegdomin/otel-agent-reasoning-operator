@@ -41,8 +41,8 @@ type Step struct {
 type TrajectoryState struct {
 	traceID      pcommon.TraceID
 	steps        []Step
-	taintSet     map[string]bool // reserved for Level 1a taint tracking
-	counters     map[string]int  // reserved for Level 1b invariants
+	taintSet     map[string]bool // Level 1a: tainted values derived from protected sources
+	counters     map[string]int  // Level 1b: per-invariant running counts (e.g. delete count)
 	lastActivity time.Time
 	rootClosed   bool // invoke_agent span observed (trajectory likely complete)
 	emitted      bool // final verdict already emitted on eviction
@@ -188,8 +188,9 @@ func (t *tracker) activeCount() int {
 	return len(t.active)
 }
 
-// finalize emits the trajectory's final verdict exactly once on eviction.
-// For now it logs; later it aggregates the trajectory-level verdict.
+// finalize runs exactly once per trajectory, on eviction. It currently only
+// logs the trajectory summary; it emits no trajectory-level verdict yet
+// (per-span violations are already handled in observe/applyVerdict).
 func (t *tracker) finalize(st *TrajectoryState) {
 	if st.emitted {
 		return

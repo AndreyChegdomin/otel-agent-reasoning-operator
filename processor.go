@@ -17,9 +17,10 @@ const (
 	attrToolName      = "gen_ai.tool.name"
 )
 
-// guardProcessor is the consumer.Traces implementation. For the skeleton it is
-// a pass-through that proves spans flow and gen_ai.* attributes are readable;
-// state/taint/invariants layer on in later build-order steps.
+// guardProcessor is the consumer.Traces implementation. It runs the Level 0
+// per-step check on every span and feeds the stateful tracker (Level 1a/1b/1c
+// taint, invariants, shape) so multi-step trajectories are checked as a whole,
+// then applies the configured verdict (annotate or drop).
 type guardProcessor struct {
 	cfg     *Config
 	logger  *zap.Logger
