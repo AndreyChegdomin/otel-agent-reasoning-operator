@@ -213,6 +213,117 @@ func TestStateViolationsAccumulateDeduped(t *testing.T) {
 	}
 }
 
+// evictAll mirrors the reaper loop body: collect under the lock, finalize
+// outside it.
+func evictAll(tr *tracker) {
+	for _, st := range tr.reapOnce() {
+		tr.finalize(st)
+	}
+}
+
+// violate feeds traceA a forbidden_ordering violation (read_secret then
+// send_email) and closes the root so reapOnce evicts it.
+func violate(tr *tracker) {
+	tr.cfg.ForbiddenOrderings = []OrderingRule{{First: "read_secret", Then: "send_email"}}
+	tr.observe(spanIn(traceA, "execute_tool", "read_secret", ""))
+	tr.observe(spanIn(traceA, "execute_tool", "send_email", ""))
+	tr.observe(spanIn(traceA, opInvokeAgent, "", ""))
+}
+
+func TestFinalizeEmitsVerdictSpan(t *testing.T) {
+	tr, clk := testTracker(time.Hour)
+	var emitted []ptrace.Traces
+	tr.emit = func(td ptrace.Traces) { emitted = append(emitted, td) }
+
+	violate(tr)
+	evictAll(tr)
+
+	if len(emitted) != 1 {
+		t.Fatalf("emit called %d times, want 1", len(emitted))
+	}
+	td := emitted[0]
+	if n := td.SpanCount(); n != 1 {
+		t.Fatalf("verdict traces carry %d spans, want 1", n)
+	}
+	span := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	if span.Name() != "trajectory.verdict" {
+		t.Errorf("span name = %q, want trajectory.verdict", span.Name())
+	}
+	if span.TraceID() != traceA {
+		t.Errorf("trace id = %s, want %s", span.TraceID(), traceA)
+	}
+	if span.SpanID().IsEmpty() {
+		t.Error("span id must be a fresh non-zero id")
+	}
+	if !span.ParentSpanID().IsEmpty() {
+		t.Errorf("parent span id = %s, want empty (root)", span.ParentSpanID())
+	}
+	if span.Kind() != ptrace.SpanKindInternal {
+		t.Errorf("kind = %v, want Internal", span.Kind())
+	}
+	wantTS := pcommon.NewTimestampFromTime(clk.t)
+	if span.StartTimestamp() != wantTS || span.EndTimestamp() != wantTS {
+		t.Errorf("timestamps = %v/%v, want both %v (eviction time)",
+			span.StartTimestamp(), span.EndTimestamp(), wantTS)
+	}
+
+	a := span.Attributes()
+	if got := stringAttr(a, "security.violation"); got != violationForbiddenOrdering {
+		t.Errorf("security.violation = %q, want %q", got, violationForbiddenOrdering)
+	}
+	vs, ok := a.Get("security.violations")
+	if !ok || vs.Slice().Len() != 1 || vs.Slice().At(0).Str() != violationForbiddenOrdering {
+		t.Errorf("security.violations = %v, want [%q]", vs, violationForbiddenOrdering)
+	}
+	if steps, ok := a.Get("trajectory.steps"); !ok || steps.Int() != 2 {
+		t.Errorf("trajectory.steps = %v, want 2", steps)
+	}
+	if tr2, ok := a.Get("trajectory.truncated"); !ok || tr2.Bool() {
+		t.Errorf("trajectory.truncated = %v, want false", tr2)
+	}
+	if rc, ok := a.Get("trajectory.root_closed"); !ok || !rc.Bool() {
+		t.Errorf("trajectory.root_closed = %v, want true", rc)
+	}
+}
+
+func TestFinalizeCleanTrajectoryEmitsNothing(t *testing.T) {
+	tr, _ := testTracker(time.Hour)
+	calls := 0
+	tr.emit = func(ptrace.Traces) { calls++ }
+
+	tr.observe(spanIn(traceA, "execute_tool", "read_file", "/data/a"))
+	tr.observe(spanIn(traceA, opInvokeAgent, "", ""))
+	evictAll(tr)
+
+	if calls != 0 {
+		t.Fatalf("emit called %d times for a clean trajectory, want 0", calls)
+	}
+}
+
+func TestFinalizeEmitsOnce(t *testing.T) {
+	tr, _ := testTracker(time.Hour)
+	calls := 0
+	tr.emit = func(ptrace.Traces) { calls++ }
+
+	violate(tr)
+	ev := tr.reapOnce()
+	if len(ev) != 1 {
+		t.Fatalf("evicted %d, want 1", len(ev))
+	}
+	tr.finalize(ev[0])
+	tr.finalize(ev[0]) // double-finalize must not re-emit
+
+	if calls != 1 {
+		t.Fatalf("emit called %d times, want exactly 1", calls)
+	}
+}
+
+func TestFinalizeNilEmitDoesNotPanic(t *testing.T) {
+	tr, _ := testTracker(time.Hour) // bare tracker: no emit func wired
+	violate(tr)
+	evictAll(tr) // must not panic despite violations and nil emit
+}
+
 func TestStartStopFlushes(t *testing.T) {
 	tr, _ := testTracker(time.Hour)
 	tr.start()

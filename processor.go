@@ -8,6 +8,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/processor"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -16,6 +18,77 @@ const (
 	attrOperationName = "gen_ai.operation.name"
 	attrToolName      = "gen_ai.tool.name"
 )
+
+// Internal telemetry: meter name is the module path; instrument names carry
+// the collector-conventional otelcol_<component>_ prefix.
+const (
+	meterName    = "github.com/AndreyChegdomin/agent-trajectory-guard"
+	metricPrefix = "otelcol_agenttrajectoryguard_"
+)
+
+// guardMetrics holds the processor's internal metric instruments. All
+// methods are nil-receiver- and nil-instrument-safe so a failed instrument
+// creation (or a bare tracker in tests) degrades to no-ops, never a crash.
+type guardMetrics struct {
+	active     metric.Int64UpDownCounter
+	evicted    metric.Int64Counter
+	violations metric.Int64Counter
+	dropped    metric.Int64Counter
+}
+
+// newGuardMetrics creates the instrument set. Instrument creation errors are
+// logged and leave that instrument nil (a no-op via the nil-safe wrappers);
+// they never fail processor creation.
+func newGuardMetrics(mp metric.MeterProvider, logger *zap.Logger) *guardMetrics {
+	if mp == nil {
+		return nil
+	}
+	meter := mp.Meter(meterName)
+	m := &guardMetrics{}
+	var err error
+	if m.active, err = meter.Int64UpDownCounter(metricPrefix + "trajectories_active"); err != nil {
+		logger.Warn("failed to create trajectories_active instrument", zap.Error(err))
+	}
+	if m.evicted, err = meter.Int64Counter(metricPrefix + "trajectories_evicted_total"); err != nil {
+		logger.Warn("failed to create trajectories_evicted_total instrument", zap.Error(err))
+	}
+	if m.violations, err = meter.Int64Counter(metricPrefix + "violations_total"); err != nil {
+		logger.Warn("failed to create violations_total instrument", zap.Error(err))
+	}
+	if m.dropped, err = meter.Int64Counter(metricPrefix + "spans_dropped_total"); err != nil {
+		logger.Warn("failed to create spans_dropped_total instrument", zap.Error(err))
+	}
+	return m
+}
+
+func (m *guardMetrics) addActive(delta int64) {
+	if m == nil || m.active == nil {
+		return
+	}
+	m.active.Add(context.Background(), delta)
+}
+
+func (m *guardMetrics) incEvicted() {
+	if m == nil || m.evicted == nil {
+		return
+	}
+	m.evicted.Add(context.Background(), 1)
+}
+
+func (m *guardMetrics) incViolation(name string) {
+	if m == nil || m.violations == nil {
+		return
+	}
+	m.violations.Add(context.Background(), 1,
+		metric.WithAttributes(attribute.String("violation", name)))
+}
+
+func (m *guardMetrics) incDropped() {
+	if m == nil || m.dropped == nil {
+		return
+	}
+	m.dropped.Add(context.Background(), 1)
+}
 
 // guardProcessor is the consumer.Traces implementation. It runs the Level 0
 // per-step check on every span and feeds the stateful tracker (Level 1a/1b/1c
@@ -26,15 +99,28 @@ type guardProcessor struct {
 	logger  *zap.Logger
 	next    consumer.Traces
 	tracker *tracker
+	metrics *guardMetrics
 }
 
 func newGuardProcessor(set processor.Settings, cfg *Config, next consumer.Traces) *guardProcessor {
-	return &guardProcessor{
+	p := &guardProcessor{
 		cfg:     cfg,
 		logger:  set.Logger,
 		next:    next,
 		tracker: newTracker(cfg, set.Logger),
+		metrics: newGuardMetrics(set.TelemetrySettings.MeterProvider, set.Logger),
 	}
+	p.tracker.metrics = p.metrics
+	// Verdict spans originate in the tracker (reaper goroutine or shutdown
+	// flush), outside any ConsumeTraces call, so they carry a fresh
+	// context.Background(). Delivery failures are logged, not retried: a
+	// verdict span is advisory telemetry, not pipeline data.
+	p.tracker.emit = func(td ptrace.Traces) {
+		if err := next.ConsumeTraces(context.Background(), td); err != nil {
+			set.Logger.Warn("failed to deliver trajectory verdict span", zap.Error(err))
+		}
+	}
+	return p
 }
 
 // Capabilities reports that this processor mutates the data it forwards:
@@ -82,11 +168,15 @@ func (p *guardProcessor) applyVerdict(span ptrace.Span) bool {
 	if len(violations) == 0 {
 		return false
 	}
+	for _, v := range violations {
+		p.metrics.incViolation(v)
+	}
 
 	// Taint violations come first from observe(), so the primary verdict
 	// favors the multi-step finding over the per-step one.
 	primary := violations[0]
 	if p.cfg.Mode == ModeDrop {
+		p.metrics.incDropped()
 		p.logger.Warn("dropping offending span",
 			zap.String("trace_id", span.TraceID().String()),
 			zap.String("span_id", span.SpanID().String()),

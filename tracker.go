@@ -1,6 +1,7 @@
 package agenttrajectoryguard
 
 import (
+	"crypto/rand"
 	"sync"
 	"time"
 
@@ -74,6 +75,16 @@ type tracker struct {
 	now    func() time.Time // injectable clock for deterministic tests
 	stopCh chan struct{}
 	wg     sync.WaitGroup
+
+	// emit delivers a trajectory verdict span downstream. Wired by
+	// newGuardProcessor to next.ConsumeTraces; nil in bare-tracker tests, and
+	// finalize must tolerate that. MUST only be called outside t.mu: it feeds
+	// the downstream pipeline, which can block or re-enter arbitrary code.
+	emit func(ptrace.Traces)
+
+	// metrics is the processor's internal instrument set; nil-safe (a bare
+	// tracker or failed instrument creation leaves it nil / partially nil).
+	metrics *guardMetrics
 }
 
 func newTracker(cfg *Config, logger *zap.Logger) *tracker {
@@ -122,6 +133,7 @@ func (t *tracker) observe(span ptrace.Span) []string {
 			counters: make(map[string]int),
 		}
 		t.active[traceID] = st
+		t.metrics.addActive(1)
 	}
 
 	now := t.now()
@@ -218,19 +230,74 @@ func (t *tracker) activeCount() int {
 	return len(t.active)
 }
 
-// finalize runs exactly once per trajectory, on eviction. It currently only
-// logs the trajectory summary; it emits no trajectory-level verdict yet
-// (per-span violations are already handled in observe/applyVerdict).
+// Verdict span name and attribute keys (per-span attrViolation is reused).
+const (
+	verdictSpanName          = "trajectory.verdict"
+	attrViolations           = "security.violations"
+	attrTrajectorySteps      = "trajectory.steps"
+	attrTrajectoryTruncated  = "trajectory.truncated"
+	attrTrajectoryRootClosed = "trajectory.root_closed"
+)
+
+// finalize runs exactly once per trajectory, on eviction (st.emitted guards
+// re-entry). A trajectory that accumulated violations yields a single
+// trajectory.verdict span delivered downstream via t.emit; clean
+// trajectories only log. Callers MUST invoke finalize outside t.mu (reap
+// collects under the lock, finalization happens after unlock): emit feeds
+// the downstream pipeline and must never run while the tracker is locked.
+//
+// Known inherited edge (intentionally not fixed here): spans that arrive
+// AFTER a rootClosed eviction re-create the trajectory state in observe(),
+// so one trace can be evicted twice and — if the late spans also violate —
+// produce a second trajectory.verdict span for the same trace_id.
 func (t *tracker) finalize(st *TrajectoryState) {
 	if st.emitted {
 		return
 	}
 	st.emitted = true
-	t.logger.Debug("trajectory evicted",
-		zap.String("trace_id", st.traceID.String()),
-		zap.Int("steps", len(st.steps)),
-		zap.Bool("root_closed", st.rootClosed),
-	)
+	t.metrics.addActive(-1)
+	t.metrics.incEvicted()
+
+	if len(st.violations) == 0 {
+		t.logger.Debug("trajectory evicted",
+			zap.String("trace_id", st.traceID.String()),
+			zap.Int("steps", len(st.steps)),
+			zap.Bool("root_closed", st.rootClosed),
+		)
+		return
+	}
+	if t.emit != nil {
+		t.emit(t.verdictTraces(st))
+	}
+}
+
+// verdictTraces builds the one-span ptrace.Traces summarizing a violating
+// trajectory: same trace_id, fresh random root span, zero-duration at
+// eviction time.
+func (t *tracker) verdictTraces(st *TrajectoryState) ptrace.Traces {
+	td := ptrace.NewTraces()
+	span := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetTraceID(st.traceID)
+	var sid [8]byte
+	_, _ = rand.Read(sid[:]) // crypto/rand.Read never fails (crashes the program instead)
+	span.SetSpanID(pcommon.SpanID(sid))
+	span.SetName(verdictSpanName)
+	span.SetKind(ptrace.SpanKindInternal)
+	ts := pcommon.NewTimestampFromTime(t.now())
+	span.SetStartTimestamp(ts)
+	span.SetEndTimestamp(ts)
+
+	a := span.Attributes()
+	a.PutStr(attrViolation, st.violations[0])
+	vs := a.PutEmptySlice(attrViolations)
+	vs.EnsureCapacity(len(st.violations))
+	for _, v := range st.violations {
+		vs.AppendEmpty().SetStr(v)
+	}
+	a.PutInt(attrTrajectorySteps, int64(len(st.steps)))
+	a.PutBool(attrTrajectoryTruncated, st.truncated)
+	a.PutBool(attrTrajectoryRootClosed, st.rootClosed)
+	return td
 }
 
 // start launches the reaper goroutine.
