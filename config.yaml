@@ -2,7 +2,7 @@
 # Run the built binary with:
 #   ./_build/otelcol-trajectory-guard --config config.yaml
 #
-# NOTE (see REAL_RUN_NOTES.md): keep destructive_tools to specific tools (not a
+# NOTE (see docs/real-run-notes.md): keep destructive_tools to specific tools (not a
 # broad shell tool like Bash) and protected_resources to concrete paths/globs
 # (not broad substrings), or Level 0 over-flags on benign commands.
 receivers:
