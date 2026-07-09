@@ -164,7 +164,7 @@ func TestShutdownFlushEmitsVerdictSpan(t *testing.T) {
 func settingsWithReader() (processor.Settings, *sdkmetric.ManualReader) {
 	set := processortest.NewNopSettings(componentType)
 	reader := sdkmetric.NewManualReader()
-	set.TelemetrySettings.MeterProvider = sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	set.MeterProvider = sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	return set, reader
 }
 

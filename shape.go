@@ -71,7 +71,7 @@ func checkSizeExfil(st *TrajectoryState, cfg *Config) (string, bool) {
 		// a non-positive bound means that dimension is not limiting.
 		withinStep := cfg.SizeWindowSteps <= 0 || (idx-i) <= cfg.SizeWindowSteps
 		withinTime := cfg.SizeWindowDuration <= 0 || cur.ts.Sub(s.ts) <= cfg.SizeWindowDuration
-		if !(withinStep && withinTime) {
+		if !withinStep || !withinTime {
 			break
 		}
 		if toolClass(s.toolName, cfg) != classRead || s.resultSize < cfg.SizeReadThreshold {

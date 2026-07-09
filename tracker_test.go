@@ -1,6 +1,7 @@
 package agenttrajectoryguard
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -155,7 +156,7 @@ func olmToolCallSpan(traceID pcommon.TraceID, tools ...string) ptrace.Span {
 }
 
 func itoa(i int) string {
-	return string(rune('0' + i))
+	return strconv.Itoa(i)
 }
 
 // TestObserveDedupesViolationWithinSingleSpan: a span with two tool calls
@@ -318,7 +319,7 @@ func TestFinalizeEmitsOnce(t *testing.T) {
 	}
 }
 
-func TestFinalizeNilEmitDoesNotPanic(t *testing.T) {
+func TestFinalizeNilEmitDoesNotPanic(_ *testing.T) {
 	tr, _ := testTracker(time.Hour) // bare tracker: no emit func wired
 	violate(tr)
 	evictAll(tr) // must not panic despite violations and nil emit

@@ -101,7 +101,7 @@ func matchesProtectedText(protected []string, text string) bool {
 // (digit, "/", ".", "_", "-", "@", ...). A pure run of letters does not qualify.
 func isResourceShaped(tok string) bool {
 	for _, r := range tok {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
 			return true
 		}
 	}

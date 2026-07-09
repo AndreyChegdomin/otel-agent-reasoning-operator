@@ -145,20 +145,26 @@ findings such as taint outrank per-step ones.
 ## Trajectory verdict span
 
 Per-span annotations tell you which span violated; they don't summarize the
-trajectory. On eviction — when the root `invoke_agent` span has been observed,
-when the trajectory has been inactive longer than `eviction_timeout`, or on
-collector shutdown — a trajectory that accumulated violations emits one
-synthetic span downstream:
+trajectory. On eviction — when the root `invoke_agent` span has been observed
+(the eviction itself happens at the next reaper sweep, up to ~30s later; the
+sweep interval is fixed at 30s), when the trajectory has been inactive longer
+than `eviction_timeout`, or on collector shutdown flush — a trajectory that
+accumulated violations emits one synthetic span downstream:
 
 - name `trajectory.verdict`, same `trace_id` as the trajectory, fresh span ID,
   kind Internal, zero duration, timestamped at eviction;
 - `security.violation` — the primary (first observed) violation;
 - `security.violations` — the full list, order-preserving and deduplicated
   across the trajectory's lifetime;
-- `trajectory.steps` — number of tool-call steps observed;
+- `trajectory.steps` — number of tool-call steps retained (the count stops at
+  `max_steps_per_trajectory` when truncated);
 - `trajectory.truncated` — whether a capacity cap stopped state growth;
 - `trajectory.root_closed` — whether the root span was seen (vs timeout
   eviction).
+
+The verdict span covers the stateful findings (Levels 1a/1b/1c/2) accumulated
+across the trajectory; Level 0 per-step findings are annotated on the
+offending span at detection time and are not repeated in the verdict span.
 
 Clean trajectories emit nothing (a debug log line only). The verdict span is
 advisory telemetry: delivery failures are logged, not retried.

@@ -108,7 +108,7 @@ func newGuardProcessor(set processor.Settings, cfg *Config, next consumer.Traces
 		logger:  set.Logger,
 		next:    next,
 		tracker: newTracker(cfg, set.Logger),
-		metrics: newGuardMetrics(set.TelemetrySettings.MeterProvider, set.Logger),
+		metrics: newGuardMetrics(set.MeterProvider, set.Logger),
 	}
 	p.tracker.metrics = p.metrics
 	// Verdict spans originate in the tracker (reaper goroutine or shutdown
